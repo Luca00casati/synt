@@ -1,5 +1,5 @@
 # Compiler and flags
-CC = gcc
+CC = tcc
 IFLAGS = 
 CFLAGS = -Wall -Wextra
 LDFLAGS =  -lm
