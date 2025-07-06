@@ -8,11 +8,14 @@
 #define SAMPLE_RATE     44100
 #define AMPLITUDE       30000
 #define CHANNELS        1
-#define FADE_DURATION_SAMPLES 200
+#define FADE_DURATION_SAMPLES 100
+#define MICRO_SLEEP 10
+#define FINAL_SLEEP 500
 
 typedef struct {
     float freq;       // Frequency in Hz (0 for silence)
-    float duration;   // Duration in seconds
+    float note_duration;   // Duration in seconds
+    float silence_duration;   // Duration in seconds
 } Note;
 
 typedef struct {
@@ -28,15 +31,13 @@ typedef struct {
 
 } NotePlayer;
 
+#define NOTE_DURATION 0.5f
+#define SILENCE_DURATION 0.5f
 Note melody[] = {
-    {440.0f, 0.5f},    // A4
-//    {0.0f,   0.2f},    // pause
-    {493.88f, 0.5f},   // B4
-  //  {0.0f,   0.2f},    // pause
-    {523.25f, 0.5f},   // C5
-  //  {0.0f,   0.2f},    // pause
-    {587.33f, 0.5f},   // D5
-   // {0.0f,   0.3f}     // final silence to avoid abrupt cut
+    {440.00f, NOTE_DURATION, SILENCE_DURATION},    // A4
+    {493.88f, NOTE_DURATION, SILENCE_DURATION},   // B4
+    {523.25f, NOTE_DURATION, SILENCE_DURATION},   // C5
+    {587.33f, NOTE_DURATION, SILENCE_DURATION},   // D5
 };
 
 void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
@@ -44,46 +45,55 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
     NotePlayer* player = (NotePlayer*)pDevice->pUserData;
     int16_t* out = (int16_t*)pOutput;
 
+    static int isSilence = 0; // Local static keeps track across calls
+
     for (ma_uint32 i = 0; i < frameCount; i++) {
         if (player->currentNoteIndex >= player->noteCount) {
             out[i] = 0;
             continue;
         }
 
-        // Transition to next note if needed
         if (player->samplesPlayedInCurrentNote >= player->samplesInCurrentNote) {
-            player->currentNoteIndex++;
             player->samplesPlayedInCurrentNote = 0;
 
-            if (player->currentNoteIndex >= player->noteCount) {
-                out[i] = 0;
-                continue;
-            }
+            if (isSilence) {
+                // Move to next actual note
+                player->currentNoteIndex++;
+                isSilence = 0;
 
-            Note currentNote = player->notes[player->currentNoteIndex];
-            player->samplesInCurrentNote = (int)(currentNote.duration * SAMPLE_RATE);
-            player->phase = 0;
+                if (player->currentNoteIndex >= player->noteCount) {
+                    out[i] = 0;
+                    continue;
+                }
 
-            if (currentNote.freq > 0.0f) {
-                player->phaseIncrement = 2.0f * (float)M_PI * currentNote.freq / SAMPLE_RATE;
+                Note currentNote = player->notes[player->currentNoteIndex];
+                player->samplesInCurrentNote = (int)(currentNote.note_duration * SAMPLE_RATE);
+                player->phase = 0;
+
+                if (currentNote.freq > 0.0f) {
+                    player->phaseIncrement = 2.0f * (float)M_PI * currentNote.freq / SAMPLE_RATE;
+                } else {
+                    player->phaseIncrement = 0;
+                }
             } else {
-                player->phaseIncrement = 0;
+                // Enter silence phase
+                Note currentNote = player->notes[player->currentNoteIndex];
+                player->samplesInCurrentNote = (int)(currentNote.silence_duration * SAMPLE_RATE);
+                player->phaseIncrement = 0;  // silence
+                isSilence = 1;
             }
         }
 
-        Note currentNote = player->notes[player->currentNoteIndex];
         float sample = 0.0f;
 
-        if (currentNote.freq > 0.0f) {
+        if (!isSilence && player->phaseIncrement > 0.0f) {
             sample = sinf(player->phase);
 
-            // Apply fade-in
             if (player->samplesPlayedInCurrentNote < FADE_DURATION_SAMPLES) {
                 float fadeIn = (float)player->samplesPlayedInCurrentNote / FADE_DURATION_SAMPLES;
                 sample *= fadeIn;
             }
 
-            // Apply fade-out
             int remainingSamples = player->samplesInCurrentNote - player->samplesPlayedInCurrentNote;
             if (remainingSamples < FADE_DURATION_SAMPLES) {
                 float fadeOut = (float)remainingSamples / FADE_DURATION_SAMPLES;
@@ -116,7 +126,7 @@ int main(void)
     // Initialize first note
     if (player.noteCount > 0) {
         Note firstNote = player.notes[0];
-        player.samplesInCurrentNote = (int)(firstNote.duration * SAMPLE_RATE);
+        player.samplesInCurrentNote = (int)(firstNote.note_duration * SAMPLE_RATE);
         if (firstNote.freq > 0.0f) {
             player.phaseIncrement = 2.0f * (float)M_PI * firstNote.freq / SAMPLE_RATE;
         } else {
@@ -144,19 +154,15 @@ int main(void)
         return -2;
     }
 
-    printf("Playing melody with smooth transitions...\n");
-
-    // Wait until melody is done
     while (player.currentNoteIndex < player.noteCount) {
-        ma_sleep(10);
+        ma_sleep(MICRO_SLEEP);
     }
 
     // Ensure all samples are played
-    ma_sleep(500);
+    ma_sleep(FINAL_SLEEP);
 
     ma_device_uninit(&device);
 
-    printf("Playback finished.\n");
     return 0;
 }
 
