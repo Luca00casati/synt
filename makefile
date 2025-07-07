@@ -1,7 +1,7 @@
 # Compiler and flags
-CC = tcc
+CC = gcc
 IFLAGS = 
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -O2 --static
 LDFLAGS =  -lm
 
 # Output binary name
@@ -19,6 +19,7 @@ $(TARGET): $(SRC)
 
 run: $(TARGET)
 	./$(TARGET)
+	aplay output.wav
 
 clean:
 	rm -f $(TARGET)

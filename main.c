@@ -1,168 +1,121 @@
-#define MINIAUDIO_IMPLEMENTATION
-#include "miniaudio.h"
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <math.h>
 
-#define SAMPLE_RATE     44100
-#define AMPLITUDE       30000
-#define CHANNELS        1
-#define FADE_DURATION_SAMPLES 100
-#define MICRO_SLEEP 10
-#define FINAL_SLEEP 500
+#define SAMPLE_RATE   44100
+#define AMPLITUDE     30000
+#define FADE_SAMPLES  100
 
 typedef struct {
-    float freq;       // Frequency in Hz (0 for silence)
-    float note_duration;   // Duration in seconds
-    float silence_duration;   // Duration in seconds
+    float freq;
+    float note_duration;
+    float silence_duration;
 } Note;
 
-typedef struct {
-    Note* notes;
-    int noteCount;
-    int currentNoteIndex;
-
-    int samplesPlayedInCurrentNote;
-    int samplesInCurrentNote;
-
-    float phase;
-    float phaseIncrement;
-
-} NotePlayer;
-
-#define NOTE_DURATION 0.5f
-#define SILENCE_DURATION 0.5f
 Note melody[] = {
-    {440.00f, NOTE_DURATION, SILENCE_DURATION},    // A4
-    {493.88f, NOTE_DURATION, SILENCE_DURATION},   // B4
-    {523.25f, NOTE_DURATION, SILENCE_DURATION},   // C5
-    {587.33f, NOTE_DURATION, SILENCE_DURATION},   // D5
+    {440.00f, 0.5f, 0.5f},  // A4
+    {493.88f, 0.5f, 0.5f},  // B4
+    {523.25f, 0.5f, 0.5f},  // C5
+    {587.33f, 0.5f, 0.5f},  // D5
 };
 
-void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
-{
-    NotePlayer* player = (NotePlayer*)pDevice->pUserData;
-    int16_t* out = (int16_t*)pOutput;
+void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels) {
+    int byte_rate = sample_rate * channels * sizeof(int16_t);
+    int block_align = channels * sizeof(int16_t);
+    int subchunk2_size = total_samples * sizeof(int16_t);
+    int chunk_size = 36 + subchunk2_size;
 
-    static int isSilence = 0; // Local static keeps track across calls
+    fwrite("RIFF", 1, 4, f);
+    fwrite(&chunk_size, 4, 1, f);
+    fwrite("WAVE", 1, 4, f);
+    fwrite("fmt ", 1, 4, f);
 
-    for (ma_uint32 i = 0; i < frameCount; i++) {
-        if (player->currentNoteIndex >= player->noteCount) {
-            out[i] = 0;
-            continue;
-        }
+    uint32_t subchunk1_size = 16;
+    uint16_t audio_format = 1;
+    uint16_t num_channels = channels;
+    uint32_t sample_rate_ = sample_rate;
+    uint32_t byte_rate_ = byte_rate;
+    uint16_t block_align_ = block_align;
+    uint16_t bits_per_sample = 16;
 
-        if (player->samplesPlayedInCurrentNote >= player->samplesInCurrentNote) {
-            player->samplesPlayedInCurrentNote = 0;
+    fwrite(&subchunk1_size, 4, 1, f);
+    fwrite(&audio_format, 2, 1, f);
+    fwrite(&num_channels, 2, 1, f);
+    fwrite(&sample_rate_, 4, 1, f);
+    fwrite(&byte_rate_, 4, 1, f);
+    fwrite(&block_align_, 2, 1, f);
+    fwrite(&bits_per_sample, 2, 1, f);
 
-            if (isSilence) {
-                // Move to next actual note
-                player->currentNoteIndex++;
-                isSilence = 0;
+    fwrite("data", 1, 4, f);
+    fwrite(&subchunk2_size, 4, 1, f);
+}
 
-                if (player->currentNoteIndex >= player->noteCount) {
-                    out[i] = 0;
-                    continue;
-                }
-
-                Note currentNote = player->notes[player->currentNoteIndex];
-                player->samplesInCurrentNote = (int)(currentNote.note_duration * SAMPLE_RATE);
-                player->phase = 0;
-
-                if (currentNote.freq > 0.0f) {
-                    player->phaseIncrement = 2.0f * (float)M_PI * currentNote.freq / SAMPLE_RATE;
-                } else {
-                    player->phaseIncrement = 0;
-                }
-            } else {
-                // Enter silence phase
-                Note currentNote = player->notes[player->currentNoteIndex];
-                player->samplesInCurrentNote = (int)(currentNote.silence_duration * SAMPLE_RATE);
-                player->phaseIncrement = 0;  // silence
-                isSilence = 1;
-            }
-        }
-
-        float sample = 0.0f;
-
-        if (!isSilence && player->phaseIncrement > 0.0f) {
-            sample = sinf(player->phase);
-
-            if (player->samplesPlayedInCurrentNote < FADE_DURATION_SAMPLES) {
-                float fadeIn = (float)player->samplesPlayedInCurrentNote / FADE_DURATION_SAMPLES;
-                sample *= fadeIn;
-            }
-
-            int remainingSamples = player->samplesInCurrentNote - player->samplesPlayedInCurrentNote;
-            if (remainingSamples < FADE_DURATION_SAMPLES) {
-                float fadeOut = (float)remainingSamples / FADE_DURATION_SAMPLES;
-                sample *= fadeOut;
-            }
-
-            player->phase += player->phaseIncrement;
-            if (player->phase >= 2.0f * (float)M_PI)
-                player->phase -= 2.0f * (float)M_PI;
-        }
-
-        out[i] = (int16_t)(AMPLITUDE * sample);
-        player->samplesPlayedInCurrentNote++;
+void apply_fade(float* buf, int samples) {
+    for (int i = 0; i < samples; ++i) {
+        if (i < FADE_SAMPLES)
+            buf[i] *= (float)i / FADE_SAMPLES;
+        if ((samples - i) < FADE_SAMPLES)
+            buf[i] *= (float)(samples - i) / FADE_SAMPLES;
     }
 }
 
-int main(void)
-{
-    ma_result result;
-    ma_device_config deviceConfig;
-    ma_device device;
+int main(void) {
+    FILE* f = fopen("output.wav", "wb");
+    if (!f) {
+        perror("fopen");
+        return 1;
+    }
 
-    NotePlayer player = { 0 };
-    player.notes = melody;
-    player.noteCount = sizeof(melody) / sizeof(Note);
-    player.currentNoteIndex = 0;
-    player.samplesPlayedInCurrentNote = 0;
-    player.phase = 0;
+    int total_samples = 0;
+    for (size_t i = 0; i < sizeof(melody)/sizeof(Note); ++i) {
+        total_samples += (int)((melody[i].note_duration + melody[i].silence_duration) * SAMPLE_RATE);
+    }
 
-    // Initialize first note
-    if (player.noteCount > 0) {
-        Note firstNote = player.notes[0];
-        player.samplesInCurrentNote = (int)(firstNote.note_duration * SAMPLE_RATE);
-        if (firstNote.freq > 0.0f) {
-            player.phaseIncrement = 2.0f * (float)M_PI * firstNote.freq / SAMPLE_RATE;
-        } else {
-            player.phaseIncrement = 0;
+    write_wav_header(f, total_samples, SAMPLE_RATE, 1);
+
+    for (size_t i = 0; i < sizeof(melody)/sizeof(Note); ++i) {
+        Note n = melody[i];
+        int note_samples = (int)(n.note_duration * SAMPLE_RATE);
+        int silence_samples = (int)(n.silence_duration * SAMPLE_RATE);
+
+        float* buf = malloc(sizeof(float) * note_samples);
+        if (!buf) {
+            fprintf(stderr, "Memory allocation failed\n");
+            fclose(f);
+            return 1;
         }
+
+        float phase = 0.0f;
+        float phase_increment = 2.0f * (float)M_PI * n.freq / SAMPLE_RATE;
+
+        for (int j = 0; j < note_samples; ++j) {
+            buf[j] = sinf(phase);
+            phase += phase_increment;
+            if (phase > 2.0f * M_PI)
+                phase -= 2.0f * M_PI;
+        }
+
+        apply_fade(buf, note_samples);
+
+        for (int j = 0; j < note_samples; ++j) {
+            int16_t s = (int16_t)(buf[j] * AMPLITUDE);
+            fwrite(&s, sizeof(s), 1, f);
+        }
+
+        int16_t zero = 0;
+        for (int j = 0; j < silence_samples; ++j) {
+            fwrite(&zero, sizeof(zero), 1, f);
+        }
+
+        free(buf);
     }
 
-    deviceConfig = ma_device_config_init(ma_device_type_playback);
-    deviceConfig.playback.format = ma_format_s16;
-    deviceConfig.playback.channels = CHANNELS;
-    deviceConfig.sampleRate = SAMPLE_RATE;
-    deviceConfig.dataCallback = data_callback;
-    deviceConfig.pUserData = &player;
+    fseek(f, 0, SEEK_SET);
+    write_wav_header(f, total_samples, SAMPLE_RATE, 1);
+    fclose(f);
 
-    result = ma_device_init(NULL, &deviceConfig, &device);
-    if (result != MA_SUCCESS) {
-        printf("Failed to initialize playback device.\n");
-        return -1;
-    }
-
-    result = ma_device_start(&device);
-    if (result != MA_SUCCESS) {
-        printf("Failed to start playback device.\n");
-        ma_device_uninit(&device);
-        return -2;
-    }
-
-    while (player.currentNoteIndex < player.noteCount) {
-        ma_sleep(MICRO_SLEEP);
-    }
-
-    // Ensure all samples are played
-    ma_sleep(FINAL_SLEEP);
-
-    ma_device_uninit(&device);
-
+    printf("Wrote output.wav (%d samples)\n", total_samples);
     return 0;
 }
 
