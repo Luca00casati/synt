@@ -1,8 +1,7 @@
 # Compiler and flags
 CC = gcc
-IFLAGS = 
-CFLAGS = -Wall -Wextra -O2 --static
-LDFLAGS =  -lm
+CFLAGS = -Wall -Wextra -O2
+LDFLAGS = -lm
 
 # Output binary name
 TARGET = synt
@@ -15,7 +14,7 @@ SRC = main.c
 all: clean $(TARGET)
 
 $(TARGET): $(SRC)
-	$(CC) $(IFLAGS) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
 
 run: $(TARGET)
 	./$(TARGET)

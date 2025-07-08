@@ -4,21 +4,22 @@
 #include <math.h>
 
 #define SAMPLE_RATE   44100
-#define AMPLITUDE     30000
+#define MAX_AMPLITUDE 32767 
 #define FADE_SAMPLES  100
 
-typedef struct {
-    float freq;
-    float note_duration;
-    float silence_duration;
-} Note;
+//config
+//#define NO_FADE
 
-Note melody[] = {
-    {440.00f, 0.5f, 0.5f},  // A4
-    {493.88f, 0.5f, 0.5f},  // B4
-    {523.25f, 0.5f, 0.5f},  // C5
-    {587.33f, 0.5f, 0.5f},  // D5
-};
+// One macro to declare both array and count
+#define FREQ_ARRAY(name, ...)                      \
+    float name[] = { __VA_ARGS__ };                \
+    const size_t name##_count = sizeof(name) / sizeof(name[0])
+
+typedef enum {
+    square_wave,
+    sine_wave,
+    triangle_wave
+}WaveType;
 
 void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels) {
     int byte_rate = sample_rate * channels * sizeof(int16_t);
@@ -52,11 +53,29 @@ void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels)
 }
 
 void apply_fade(float* buf, int samples) {
+#ifndef NO_FADE
     for (int i = 0; i < samples; ++i) {
         if (i < FADE_SAMPLES)
             buf[i] *= (float)i / FADE_SAMPLES;
         if ((samples - i) < FADE_SAMPLES)
             buf[i] *= (float)(samples - i) / FADE_SAMPLES;
+    }
+#else
+    (void)buf;
+    (void)samples;
+#endif
+}
+
+float generate_sample(WaveType type, float phase) {
+    switch (type) {
+        case sine_wave:
+            return sinf(phase);
+        case square_wave:
+            return sinf(phase) >= 0.0f ? 1.0f : -1.0f;
+        case triangle_wave:
+            return 2.0f * (float)fabs(2.0f * (phase / (2.0f * M_PI) - floorf(phase / (2.0f * M_PI) + 0.5f))) - 1.0f;
+        default:
+            return 0.0f;
     }
 }
 
@@ -67,18 +86,19 @@ int main(void) {
         return 1;
     }
 
-    int total_samples = 0;
-    for (size_t i = 0; i < sizeof(melody)/sizeof(Note); ++i) {
-        total_samples += (int)((melody[i].note_duration + melody[i].silence_duration) * SAMPLE_RATE);
-    }
+    FREQ_ARRAY(freqs, 440.00f, 493.88f, 523.25f, 587.33f, 659.25f);
+    WaveType wave = square_wave;
+
+    float note_duration = 0.5f;
+    float silence_duration = 0.0f;
+    float note_intensity = 0.5f;
+    int note_samples = (int)(note_duration * SAMPLE_RATE);
+    int silence_samples = (int)(silence_duration * SAMPLE_RATE);
+    int total_samples = freqs_count * (note_samples + silence_samples);
 
     write_wav_header(f, total_samples, SAMPLE_RATE, 1);
 
-    for (size_t i = 0; i < sizeof(melody)/sizeof(Note); ++i) {
-        Note n = melody[i];
-        int note_samples = (int)(n.note_duration * SAMPLE_RATE);
-        int silence_samples = (int)(n.silence_duration * SAMPLE_RATE);
-
+    for (size_t i = 0; i < freqs_count; ++i) {
         float* buf = malloc(sizeof(float) * note_samples);
         if (!buf) {
             fprintf(stderr, "Memory allocation failed\n");
@@ -87,10 +107,10 @@ int main(void) {
         }
 
         float phase = 0.0f;
-        float phase_increment = 2.0f * (float)M_PI * n.freq / SAMPLE_RATE;
+        float phase_increment = 2.0f * (float)M_PI * freqs[i] / SAMPLE_RATE;
 
         for (int j = 0; j < note_samples; ++j) {
-            buf[j] = sinf(phase);
+            buf[j] = generate_sample(wave, phase);
             phase += phase_increment;
             if (phase > 2.0f * M_PI)
                 phase -= 2.0f * M_PI;
@@ -99,7 +119,7 @@ int main(void) {
         apply_fade(buf, note_samples);
 
         for (int j = 0; j < note_samples; ++j) {
-            int16_t s = (int16_t)(buf[j] * AMPLITUDE);
+            int16_t s = (int16_t)(buf[j] * (MAX_AMPLITUDE * note_intensity));
             fwrite(&s, sizeof(s), 1, f);
         }
 
