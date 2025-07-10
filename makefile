@@ -1,6 +1,6 @@
 # Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -O2
+CFLAGS = -Wall -Wextra -O2 -std=c99 --pedantic
 LDFLAGS = -lm
 
 # Output binary name

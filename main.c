@@ -1,25 +1,62 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <math.h>
 
 #define SAMPLE_RATE   44100
 #define MAX_AMPLITUDE 32767 
 #define FADE_SAMPLES  100
+#define LENGTH(X) sizeof(X) / sizeof(X[0])
+#define VAINIT 128
+#define VAGROW 2
+#define END_FREQ -1.0f
+#define PI 3.14f
 
 //config
 //#define NO_FADE
-
-// One macro to declare both array and count
-#define FREQ_ARRAY(name, ...)                      \
-    float name[] = { __VA_ARGS__ };                \
-    const size_t name##_count = sizeof(name) / sizeof(name[0])
 
 typedef enum {
     square_wave,
     sine_wave,
     triangle_wave
 }WaveType;
+
+typedef struct{
+    float* freqs;
+    size_t freq_count;
+    size_t freq_size;
+    WaveType wave;
+    float note_duration;
+    float note_intensity;
+}Music;
+
+void music_init(Music* music){
+    music->freqs = malloc(sizeof(float)*VAINIT);
+    music->freq_count = 0;
+    music->freq_size = VAINIT;
+}
+
+void vappend_end(Music* music, ...) {
+    va_list args;
+    va_start(args, music);
+
+    float freq;
+    while (1) {
+        freq = (float)va_arg(args, double); // float will be promoted in va_arg
+        if (freq == END_FREQ ) break;
+
+        if (music->freq_count >= music->freq_size) {
+            music->freq_size *= VAGROW;
+            music->freqs = realloc(music->freqs, sizeof(float) * music->freq_size);
+        }
+        music->freqs[music->freq_count++] = freq;
+    }
+
+    va_end(args);
+}
+
+#define VAPPEND(music, ...) vappend_end(music, __VA_ARGS__, END_FREQ)
 
 void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels) {
     int byte_rate = sample_rate * channels * sizeof(int16_t);
@@ -73,59 +110,41 @@ float generate_sample(WaveType type, float phase) {
         case square_wave:
             return sinf(phase) >= 0.0f ? 1.0f : -1.0f;
         case triangle_wave:
-            return 2.0f * (float)fabs(2.0f * (phase / (2.0f * M_PI) - floorf(phase / (2.0f * M_PI) + 0.5f))) - 1.0f;
+            return 2.0f * (float)fabs(2.0f * (phase / (2.0f * PI) - floorf(phase / (2.0f * PI) + 0.5f))) - 1.0f;
         default:
             return 0.0f;
     }
 }
 
-int main(void) {
-    FILE* f = fopen("output.wav", "wb");
-    if (!f) {
-        perror("fopen");
-        return 1;
-    }
-
-    FREQ_ARRAY(freqs, 440.00f, 493.88f, 523.25f, 587.33f, 659.25f);
-    WaveType wave = square_wave;
-
-    float note_duration = 0.5f;
-    float silence_duration = 0.0f;
-    float note_intensity = 0.5f;
-    int note_samples = (int)(note_duration * SAMPLE_RATE);
-    int silence_samples = (int)(silence_duration * SAMPLE_RATE);
-    int total_samples = freqs_count * (note_samples + silence_samples);
+void generate_music(FILE* f, Music* music){
+    int note_samples = (int)(music->note_duration * SAMPLE_RATE);
+    int total_samples = music->freq_count * (note_samples);
 
     write_wav_header(f, total_samples, SAMPLE_RATE, 1);
 
-    for (size_t i = 0; i < freqs_count; ++i) {
+    for (size_t i = 0; i < music->freq_count; ++i) {
         float* buf = malloc(sizeof(float) * note_samples);
         if (!buf) {
             fprintf(stderr, "Memory allocation failed\n");
             fclose(f);
-            return 1;
+            //return 1;
         }
 
         float phase = 0.0f;
-        float phase_increment = 2.0f * (float)M_PI * freqs[i] / SAMPLE_RATE;
+        float phase_increment = 2.0f * (float)PI * music->freqs[i] / SAMPLE_RATE;
 
         for (int j = 0; j < note_samples; ++j) {
-            buf[j] = generate_sample(wave, phase);
+            buf[j] = generate_sample(music->wave, phase);
             phase += phase_increment;
-            if (phase > 2.0f * M_PI)
-                phase -= 2.0f * M_PI;
+            if (phase > 2.0f * PI)
+                phase -= 2.0f * PI;
         }
 
         apply_fade(buf, note_samples);
 
         for (int j = 0; j < note_samples; ++j) {
-            int16_t s = (int16_t)(buf[j] * (MAX_AMPLITUDE * note_intensity));
+            int16_t s = (int16_t)(buf[j] * (MAX_AMPLITUDE * music->note_intensity));
             fwrite(&s, sizeof(s), 1, f);
-        }
-
-        int16_t zero = 0;
-        for (int j = 0; j < silence_samples; ++j) {
-            fwrite(&zero, sizeof(zero), 1, f);
         }
 
         free(buf);
@@ -136,6 +155,30 @@ int main(void) {
     fclose(f);
 
     printf("Wrote output.wav (%d samples)\n", total_samples);
+}
+
+
+int main(void) {
+    FILE* f = fopen("output.wav", "wb");
+    if (!f) {
+        perror("fopen");
+        return 1;
+    }
+
+    Music music = {0};
+    music_init(&music);
+    music.wave = sine_wave;
+    music.note_duration = 0.5f;
+    music.note_intensity = 0.5f;
+    VAPPEND(&music,
+    440.0f, 0.0f,
+    493.88f, 0.0f,
+    523.25f, 0.0f,
+    587.33f, 0.0f,
+    659.25f
+    );
+
+    generate_music(f, &music);
     return 0;
 }
 
