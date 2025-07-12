@@ -18,12 +18,13 @@ int main(void) {
     music.note_duration = 0.5f;
     music.note_intensity = 0.5f;
     VAPPEND(&music,
-    440.0f, 0.0f,
-    493.88f, 0.0f,
-    523.25f, 0.0f,
-    587.33f, 0.0f,
+    440.0f, 
+    493.88f,
+    523.25f,
+    587.33f,
     659.25f
     );
+    add_between(&music, 0.0f);
 
     generate_music(f, &music);
     return 0;

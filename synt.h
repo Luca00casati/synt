@@ -20,6 +20,7 @@
 #define VAINIT 128
 #define VAGROW 2
 #define END_FREQ -1.0f
+#define PAUSE_FREQ 0.0f
 
 #define VAPPEND(music, ...) vappend_end(music, __VA_ARGS__, END_FREQ)
 
@@ -44,6 +45,8 @@ typedef struct{
 void music_init(Music* music);
 
 void vappend_end(Music* music, ...);
+
+void add_between(Music* music, float freq);
 
 void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels);
 

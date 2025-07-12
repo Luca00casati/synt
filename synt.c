@@ -33,6 +33,38 @@ void vappend_end(Music* music, ...) {
     va_end(args);
 }
 
+void add_between(Music* music, float freq) {
+    if (music->freq_count < 2) {
+        return;
+    }
+
+    size_t original_count = music->freq_count;
+    size_t insert_count = original_count - 1;
+    size_t new_count = original_count + insert_count;
+
+    if (new_count > music->freq_size) {
+        while (music->freq_size < new_count) {
+            music->freq_size *= VAGROW;
+        }
+        float* new_ptr = realloc(music->freqs, sizeof(float) * music->freq_size);
+        if (new_ptr == NULL) {
+            printf("Failed to realloc in add_between\n");
+            return;
+        }
+        music->freqs = new_ptr;
+    }
+
+    for (size_t i = original_count - 1; i > 0; --i) {
+        music->freqs[i + i] = music->freqs[i];       // Move original
+        music->freqs[i + i - 1] = freq;              // Insert between
+    }
+
+    music->freqs[0] = music->freqs[0];
+
+    music->freq_count = new_count;
+}
+        
+
 void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels) {
     int byte_rate = sample_rate * channels * sizeof(int16_t);
     int block_align = channels * sizeof(int16_t);
