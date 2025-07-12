@@ -13,6 +13,7 @@
 #define MAX_AMPLITUDE 32767 
 #define FADE_SAMPLES  100
 #define TRACK_COUNT 4
+#define AUDIO_CHANNELS 2
 
 #define LENGTH(X) sizeof(X) / sizeof(X[0])
 #define TRUE 1
@@ -48,6 +49,8 @@ void vappend_end(Music* music, ...);
 void add_between(Music* music, float freq);
 
 void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels);
+
+float envelope(float t, float duration);
 
 float generate_sample(WaveType type, float phase);
 
