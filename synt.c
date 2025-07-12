@@ -3,12 +3,17 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <math.h>
+#include <string.h>
 #include "synt.h"
 
 void music_init(Music* music){
     music->freqs = malloc(sizeof(float)*VAINIT);
     music->freq_count = 0;
     music->freq_size = VAINIT;
+
+    music->wave = square;
+    music->note_duration = 0.5f;
+    music->note_intensity = 0.5f;
 }
 
 void vappend_end(Music* music, ...) {
@@ -34,35 +39,36 @@ void vappend_end(Music* music, ...) {
 }
 
 void add_between(Music* music, float freq) {
-    if (music->freq_count < 2) {
-        return;
-    }
+    if (music->freq_count < 2) return;
 
     size_t original_count = music->freq_count;
-    size_t insert_count = original_count - 1;
-    size_t new_count = original_count + insert_count;
+    size_t new_count = original_count * 2 - 1;
 
     if (new_count > music->freq_size) {
         while (music->freq_size < new_count) {
             music->freq_size *= VAGROW;
         }
-        float* new_ptr = realloc(music->freqs, sizeof(float) * music->freq_size);
-        if (new_ptr == NULL) {
-            printf("Failed to realloc in add_between\n");
-            return;
-        }
-        music->freqs = new_ptr;
     }
 
-    for (size_t i = original_count - 1; i > 0; --i) {
-        music->freqs[i + i] = music->freqs[i];       // Move original
-        music->freqs[i + i - 1] = freq;              // Insert between
+    float* temp = malloc(sizeof(float) * new_count);
+    if (!temp) {
+        fprintf(stderr, "Failed to allocate temp buffer in add_between\n");
+        return;
     }
 
-    music->freqs[0] = music->freqs[0];
+    size_t ti = 0;
+    for (size_t i = 0; i < original_count - 1; ++i) {
+        temp[ti++] = music->freqs[i];
+        temp[ti++] = freq;
+    }
+    temp[ti] = music->freqs[original_count - 1];
 
+    memcpy(music->freqs, temp, sizeof(float) * new_count);
     music->freq_count = new_count;
+
+    free(temp);
 }
+
         
 
 void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels) {
@@ -96,66 +102,68 @@ void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels)
     fwrite(&subchunk2_size, 4, 1, f);
 }
 
-void apply_fade(float* buf, int samples) {
-    for (int i = 0; i < samples; ++i) {
-        if (i < FADE_SAMPLES)
-            buf[i] *= (float)i / FADE_SAMPLES;
-        if ((samples - i) < FADE_SAMPLES)
-            buf[i] *= (float)(samples - i) / FADE_SAMPLES;
-    }
-}
-
 float generate_sample(WaveType type, float phase) {
     switch (type) {
-        case sine_wave:
+        case sine:
             return sinf(phase);
-        case square_wave:
+        case square:
             return sinf(phase) >= 0.0f ? 1.0f : -1.0f;
-        case triangle_wave:
+        case triangle:
             return 2.0f * (float)fabs(2.0f * (phase / (2.0f * M_PI) - floorf(phase / (2.0f * M_PI) + 0.5f))) - 1.0f;
+        case sawtooth:
+            return 2.0f * (phase / (2.0f * M_PI) - floorf(phase / (2.0f * M_PI) + 0.5f));
         default:
             return 0.0f;
     }
 }
 
-void generate_music(FILE* f, Music* music){
-    int note_samples = (int)(music->note_duration * SAMPLE_RATE);
-    int total_samples = music->freq_count * (note_samples);
+void generate_music(FILE* f, Music* music1, Music* music2, Music* music3, Music* music4) {
+    Music* tracks[TRACK_COUNT] = { music1, music2, music3, music4 };
+    int note_counts[TRACK_COUNT];
+    int note_samples[TRACK_COUNT];
+    int total_samples = 0;
 
-    write_wav_header(f, total_samples, SAMPLE_RATE, 1);
+    for (int t = 0; t < TRACK_COUNT; ++t) {
+        if (tracks[t] == NULL) continue;
+        note_counts[t] = tracks[t]->freq_count;
+        note_samples[t] = (int)(tracks[t]->note_duration * SAMPLE_RATE);
+        int track_samples = note_counts[t] * note_samples[t];
+        if (track_samples > total_samples) {
+            total_samples = track_samples;
+        }
+    }
 
-    for (size_t i = 0; i < music->freq_count; ++i) {
-        float* buf = malloc(sizeof(float) * note_samples);
-        if (!buf) {
-            fprintf(stderr, "Memory allocation failed\n");
-            fclose(f);
-            //return 1;
+    write_wav_header(f, total_samples, SAMPLE_RATE, 1); // mono
+
+    for (int sample_index = 0; sample_index < total_samples; ++sample_index) {
+        float mixed_sample = 0.0f;
+
+        for (int t = 0; t < TRACK_COUNT; ++t) {
+            Music* m = tracks[t];
+            if (m == NULL) continue;
+
+            int ns = (int)(m->note_duration * SAMPLE_RATE);
+            int note_i = sample_index / ns;
+            if ((size_t)note_i >= m->freq_count) continue;
+
+            int local_sample_index = sample_index % ns;
+            float freq = m->freqs[note_i];
+            float phase = 2.0f * M_PI * local_sample_index * freq / SAMPLE_RATE;
+            float sample = generate_sample(m->wave, phase);
+
+            mixed_sample += sample * m->note_intensity;
         }
 
-        float phase = 0.0f;
-        float phase_increment = 2.0f * (float)M_PI * music->freqs[i] / SAMPLE_RATE;
+        // Apply soft clipping to control final amplitude
+        mixed_sample = tanhf(mixed_sample);
 
-        for (int j = 0; j < note_samples; ++j) {
-            buf[j] = generate_sample(music->wave, phase);
-            phase += phase_increment;
-            if (phase > 2.0f * M_PI)
-                phase -= 2.0f * M_PI;
-        }
-
-#if FADE == TRUE
-        apply_fade(buf, note_samples);
-#endif
-        for (int j = 0; j < note_samples; ++j) {
-            int16_t s = (int16_t)(buf[j] * (MAX_AMPLITUDE * music->note_intensity));
-            fwrite(&s, sizeof(s), 1, f);
-        }
-
-        free(buf);
+        int16_t s = (int16_t)(mixed_sample * MAX_AMPLITUDE);
+        fwrite(&s, sizeof(s), 1, f);
     }
 
     fseek(f, 0, SEEK_SET);
     write_wav_header(f, total_samples, SAMPLE_RATE, 1);
     fclose(f);
 
-    printf("Wrote output.wav (%d samples)\n", total_samples);
+    printf("Wrote mixed output.wav (%d samples)\n", total_samples);
 }

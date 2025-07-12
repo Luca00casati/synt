@@ -1,6 +1,6 @@
 # Compiler and flags
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c99 --pedantic --static
+CC = clang
+CFLAGS = -Wall -Wextra -O2 -std=c99 --pedantic
 LDFLAGS = -lm
 
 # Output binary name
@@ -8,7 +8,7 @@ TARGET = synt
 
 # Source files
 SRC = main.c synt.c
-INC = synt.h
+INC = synt.h note.h
 
 .PHONY: all clean run
 

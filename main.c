@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <math.h>
+#include "note.h"
 #include "synt.h"
 
 int main(void) {
@@ -12,21 +13,36 @@ int main(void) {
         return 1;
     }
 
-    Music music = {0};
-    music_init(&music);
-    music.wave = sine_wave;
-    music.note_duration = 0.5f;
-    music.note_intensity = 0.5f;
-    VAPPEND(&music,
-    440.0f, 
-    493.88f,
-    523.25f,
-    587.33f,
-    659.25f
-    );
-    add_between(&music, 0.0f);
+    Music music1 = {0};
+    music_init(&music1);
+    music1.note_duration = 0.4f;
+    music1.note_intensity = 0.5f;
+    for (int i = 0; i < 2; i++){
+    VAPPEND(&music1,
+    A4, 
+    B4,
+    C4,
+    B4,
+    A4,
+    P);
+    }
 
-    generate_music(f, &music);
+    VAPPEND(&music1,
+    A4, 
+    B4,
+    C4,
+    B4,
+    A4);
+    //add_between(&music1, P);
+
+    Music music2 = {0};
+    music_init(&music2);
+
+    music2.note_duration = 0.4f;
+    music2.note_intensity = 0.5f;
+    music2.wave = triangle;
+    VAPPEND(&music2, P, B5, P, B5, P, P, P, B5, P, B5, P, P, P, B5, P, B5, P);
+    generate_music(f, &music1, &music2, NULL, NULL);
     return 0;
 }
 

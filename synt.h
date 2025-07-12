@@ -12,6 +12,7 @@
 #define SAMPLE_RATE   44100
 #define MAX_AMPLITUDE 32767 
 #define FADE_SAMPLES  100
+#define TRACK_COUNT 4
 
 #define LENGTH(X) sizeof(X) / sizeof(X[0])
 #define TRUE 1
@@ -24,13 +25,11 @@
 
 #define VAPPEND(music, ...) vappend_end(music, __VA_ARGS__, END_FREQ)
 
-//config
-#define FADE TRUE
-
 typedef enum {
-    square_wave,
-    sine_wave,
-    triangle_wave
+    square,
+    sine,
+    triangle,
+    sawtooth
 }WaveType;
 
 typedef struct{
@@ -50,11 +49,8 @@ void add_between(Music* music, float freq);
 
 void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels);
 
-void apply_fade(float* buf, int samples);
-
 float generate_sample(WaveType type, float phase);
 
-void generate_music(FILE* f, Music* music);
-
+void generate_music(FILE* f, Music* music1, Music* music2, Music* music3, Music* music4);
 
 #endif // SYNT_H
