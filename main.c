@@ -16,7 +16,6 @@ int main(void) {
     Music music1 = {0};
     music_init(&music1);
     music1.note_duration = 0.4f;
-    music1.note_intensity = 0.5f;
     for (int i = 0; i < 2; i++){
     VAPPEND(&music1,
     A4, 
@@ -39,9 +38,8 @@ int main(void) {
     music_init(&music2);
 
     music2.note_duration = 0.4f;
-    music2.note_intensity = 0.5f;
     music2.wave = triangle;
-    VAPPEND(&music2, P, B5, P, B5, P, P, P, B5, P, B5, P, P, P, B5, P, B5, P);
+    VAPPEND(&music2, P, B3, P, B3, P, P, P, B3, P, B3, P, P, P, B3, P, B3, P);
     generate_music(f, &music1, &music2, NULL, NULL);
     return 0;
 }

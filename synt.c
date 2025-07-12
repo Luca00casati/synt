@@ -82,10 +82,30 @@ float generate_sample(WaveType type, float phase) {
             return sinf(phase);
         case square:
             return sinf(phase) >= 0 ? 1.0f : -1.0f;
-        case triangle:
-            return 2.0f * (float)fabs(2.0 * (phase / (2.0 * M_PI) - floor(phase / (2.0 * M_PI) + 0.5))) - 1.0f;
+        case triangle: {
+            float phase_norm = fmodf(phase, 2.0f * M_PI) / (2.0f * M_PI);
+            return 4.0f * fabsf(phase_norm - 0.5f) - 1.0f;
+            }
+        case folded_saw: {
+            float saw = 2.0f * (fmodf(phase / (2.0f * M_PI), 1.0f)) - 1.0f;
+            return sinf(3.0f * saw * M_PI);  // fold shape
+        }
+        case bent_sine:
+            return sinf(phase) + 0.3f * sinf(3 * phase);
+            case bass_pulse: {
+            float width = 0.3f;  // duty cycle (try 0.1–0.5)
+            float cycle = fmodf(phase / (2.0f * M_PI), 1.0f);
+            return (cycle < width) ? 1.0f : -1.0f;
+        }
+        case sub_square: {
+            float base = sinf(phase) >= 0 ? 1.0f : -1.0f;
+            float sub = sinf(phase * 0.5f) >= 0 ? 1.0f : -1.0f;
+            return 0.6f * base + 0.4f * sub;
+        }
         case sawtooth:
             return 2.0f * (phase / (2.0f * M_PI) - floorf(phase / (2.0f * M_PI) + 0.5f));
+        case white_noise:
+            return 2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f;
         default:
             return 0.0f;
     }
@@ -136,6 +156,7 @@ void write_wav_header(FILE* f, int total_samples, int sample_rate, int channels)
 }
 
 void generate_music(FILE* f, Music* m1, Music* m2, Music* m3, Music* m4) {
+    srand(SEED); // generate seed for noise
     Music* tracks[TRACK_COUNT] = { m1, m2, m3, m4 };
     float pans[TRACK_COUNT] = { 0.1f, 0.4f, 0.6f, 0.9f };
 

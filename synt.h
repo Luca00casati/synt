@@ -18,6 +18,7 @@
 #define LENGTH(X) sizeof(X) / sizeof(X[0])
 #define TRUE 1
 #define FALSE 0
+#define SEED 2673
 
 #define VAINIT 128
 #define VAGROW 2
@@ -30,7 +31,12 @@ typedef enum {
     square,
     sine,
     triangle,
-    sawtooth
+    sawtooth,
+    folded_saw,
+    bent_sine,
+    sub_square,
+    bass_pulse,
+    white_noise
 }WaveType;
 
 typedef struct{
