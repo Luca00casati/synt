@@ -82,10 +82,6 @@ float generate_sample(WaveType type, float phase) {
             return sinf(phase);
         case square:
             return sinf(phase) >= 0 ? 1.0f : -1.0f;
-        case triangle: {
-            float phase_norm = fmodf(phase, 2.0f * M_PI) / (2.0f * M_PI);
-            return 4.0f * fabsf(phase_norm - 0.5f) - 1.0f;
-            }
         case folded_saw: {
             float saw = 2.0f * (fmodf(phase / (2.0f * M_PI), 1.0f)) - 1.0f;
             return sinf(3.0f * saw * M_PI);  // fold shape

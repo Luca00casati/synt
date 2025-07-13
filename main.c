@@ -38,7 +38,7 @@ int main(void) {
     music_init(&music2);
 
     music2.note_duration = 0.4f;
-    music2.wave = triangle;
+    music2.wave = sawtooth;
     VAPPEND(&music2, P, B3, P, B3, P, P, P, B3, P, B3, P, P, P, B3, P, B3, P);
     generate_music(f, &music1, &music2, NULL, NULL);
     return 0;

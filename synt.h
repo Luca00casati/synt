@@ -30,7 +30,6 @@
 typedef enum {
     square,
     sine,
-    triangle,
     sawtooth,
     folded_saw,
     bent_sine,
