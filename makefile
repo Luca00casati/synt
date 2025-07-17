@@ -1,7 +1,8 @@
 # Compiler and flags
 CC = clang
 CFLAGS = -Wall -Wextra -O2 -std=c99 --pedantic
-LDFLAGS = -lm
+RAYLIB = raylib-5.5_linux_amd64
+LDFLAGS = -I ./$(RAYLIB)/include ./$(RAYLIB)/lib/libraylib.a -lm
 
 # Output binary name
 TARGET = synt
@@ -12,14 +13,13 @@ INC = synt.h note.h
 
 .PHONY: all clean run
 
-all: clean $(TARGET)
+all: $(TARGET)
 
 $(TARGET): $(SRC) $(INC)
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
 
 run: $(TARGET)
 	./$(TARGET)
-	aplay output.wav
 
 clean:
 	rm -f $(TARGET)
